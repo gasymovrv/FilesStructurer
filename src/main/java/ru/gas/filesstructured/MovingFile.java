@@ -8,7 +8,6 @@ import org.apache.commons.io.FileUtils;
 import java.io.File;
 import java.time.*;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
@@ -20,7 +19,7 @@ public class MovingFile {
         if (f.isDirectory())
             this.directory = f;
         else
-            throw new IllegalArgumentException("Необходимо указать директорию");
+            throw new IllegalArgumentException("Необходимо указать директорию (абсолютный путь)");
     }
 
     public void run() {
@@ -40,17 +39,17 @@ public class MovingFile {
                     ExifSubIFDDirectory exif = metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class);
                     if (exif != null) {
                         date = convertMillisToLocalDateUTC(exif.getDate(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL).getTime());
-                        log = String.format("%s: %s_%s_%s_%sh", f.getName(), date.getYear(), date.getMonthValue(), date.getDayOfMonth(), date.getHour());
+                        log = String.format("%s: %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour()));
                     }
                 } catch (Exception ignored) {}
                 if (date == null) {
                     date = convertMillisToLocalDate(f.lastModified());
-                    log = String.format("It doesn't have metadata (%s): %s_%s_%s_%sh", f.getName(), date.getYear(), date.getMonthValue(), date.getDayOfMonth(), date.getHour());
+                    log = String.format("It doesn't have metadata (%s): %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour()));
                 }
 
-                String dirName = "NOT LOAD NAME";
+                String dirName = "NOT LOAD DIRECTORY NAME";
                 try {
-                    dirName = String.format("%s\\%s_%s", directory, date.getYear(), date.getMonthValue());
+                    dirName = String.format("%s\\%s_%s", directory, date.getYear(), addZeros(date.getMonthValue()));
                     File dir = new File(dirName);
                     if (!dir.exists()) {
                         if (dir.mkdir()) {
@@ -83,6 +82,14 @@ public class MovingFile {
 
     private LocalDateTime convertMillisToLocalDateUTC(Long l) {
         return LocalDateTime.ofInstant(Instant.ofEpochMilli(l), ZoneOffset.UTC);
+    }
+
+    private String addZeros(int m) {
+        if(m>=10){
+            return String.valueOf(m);
+        } else {
+            return String.format("0%d", m);
+        }
     }
 
 }
