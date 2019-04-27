@@ -4,38 +4,59 @@ import java.util.Arrays;
 
 public class Main {
     public static void main(String[] args) {
-        System.out.println(
-                "Программа структурирования файлов.\n" +
-                "По умолчанию - переименовывает по шаблону [год]_[№ месяца]_[№ файла]\n" +
-                "С ключом -r - рекурсивное извлечение из всех подпапок и переименование (несовместим с [-f])\n" +
-                "С ключом -f - распределяет файлы по подпапкам с именем [год]_[№ месяца]\n" +
-                "Год и номер месяца - берутся из даты съемки если это фото, иначе из даты изменения файла.\n" +
-                "Путь к корневой директории указать в аргументах программы.\n");
+        System.out.println("Программа структурирования файлов.");
+        System.out.println(getArgsInfo());
+        Options option = Options.EMPTY;
+        System.out.println("----------------------------------------------------");
+
         if(args.length == 0) {
-            info();
-        } else {
-            MovingOrRenamingFiles movingOrRenamingFiles;
-            boolean createFolders = false;
-            boolean recursiveRename = false;
-            String argsString = Arrays.toString(args);
-            if(argsString.contains("-f")){
-                createFolders = true;
+            printErrorInfo();
+            return;
+        } else if(args.length > 1) {
+            String[] argsWithoutDirectory = Arrays.copyOfRange(args, 1, args.length);
+            int count = 0;
+            for (String s : argsWithoutDirectory) {
+                if(s.equals("-f")){
+                    option = Options.F;
+                    count++;
+                }
+                if(s.equals("-rm")){
+                    option = Options.RM;
+                    count++;
+                }
+                if(s.equals("-rmr")){
+                    option = Options.RMR;
+                    count++;
+                }
             }
-            if(argsString.contains("-r")){
-                recursiveRename = true;
-            }
-            if(createFolders && recursiveRename){
-                info();
+            if(count>1){
+                printErrorInfo();
                 return;
             }
-            movingOrRenamingFiles = new MovingOrRenamingFiles(args[0], createFolders, recursiveRename);
-            movingOrRenamingFiles.run();
         }
+        MovingOrRenamingFiles movingOrRenamingFiles = new MovingOrRenamingFiles(args[0], option);
+        System.out.println(option.getInfo());
+        System.out.println("----------------------run---------------------------");
+        movingOrRenamingFiles.run();
     }
-    private static void info(){
-        System.out.println("Неверные параметры запуска. Необходимо использовать следующие аргументы:");
-        System.out.println("1й обязательный аргумент: адрес корневой директории");
-        System.out.println("2й необязательный аргумент: [-f] - создать подпапки");
-        System.out.println("3й необязательный аргумент: [-r] - рекурсивное извлечение и переименование (несовместим с [-f])\n");
+
+    private static void printErrorInfo(){
+        System.out.println("Неверные параметры запуска.");
+        System.out.println(getArgsInfo());
     }
+
+    private static String getArgsInfo() {
+        return  "Обязательные аргументы:\n" +
+                "\t1.[путь_к_корневой_директории]\n\n" +
+                "Необязательные аргументы (может быть выбран только один):\n" +
+                "\t1.[-rm] - рекурсивное извлечение файлов из всех подпапок\n" +
+                "\t2.[-rmr] - рекурсивное извлечение файлов из всех подпапок и переименование по шаблону: [год]_[№ месяца]_[№ файла]\n" +
+                "\t3.[-f] - распределяет файлы по подпапкам с именем [год]_[№ месяца]\n" +
+                "\t4. Без необязательных аргументов - переименовывает файлы в указанной директории по шаблону: [год]_[№ месяца]_[№ файла]\n\n"+
+                "Примечания:\n" +
+                "Год и номер месяца - берутся из даты съемки если это фото, иначе из даты изменения файла.\n\n" +
+                "Пример запуска:\n" +
+                "java -jar FilesStructured.jar \"C:\\Users\\Dma\\Desktop\\2017\" -f\n";
+    }
+
 }

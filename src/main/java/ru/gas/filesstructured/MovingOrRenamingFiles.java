@@ -12,48 +12,55 @@ import java.util.Iterator;
 import java.util.List;
 
 public class MovingOrRenamingFiles {
-    private File directory;
-    private boolean createFolders;
-    private boolean recursiveRename;
+    private File root;
+    private Options option;
 
-    public MovingOrRenamingFiles(String directory, boolean createFolders, boolean recursiveRename) {
-        this.createFolders = createFolders;
-        this.recursiveRename = recursiveRename;
-        File f = new File(directory);
+    public MovingOrRenamingFiles(String root, Options option) {
+        this.option = option == null ? Options.EMPTY : option;
+        File f = new File(root);
         if (f.isDirectory())
-            this.directory = f;
+            this.root = f;
         else
             throw new IllegalArgumentException("Необходимо указать директорию (абсолютный путь)");
     }
 
     public void run() {
-        Iterator<File> iter = FileUtils.iterateFiles(directory, null, recursiveRename);
+        Iterator<File> iter = FileUtils.iterateFiles(root, null, option==Options.RM || option==Options.RMR);
         List<String> errors = new ArrayList<>();
         if (iter.hasNext()) {
             File f;
             int commonIndex = 0;
             int i = 0;
             int month = -1;
+            int year = -1;
             while (iter.hasNext()) {
                 commonIndex++;
                 f = iter.next();
                 StringBuilder dateLog = new StringBuilder();
-                LocalDateTime date = getLastModifiedDateTime(f, dateLog);
-                if(createFolders){
-                    moveToDirectories(f, date, errors, dateLog, commonIndex);
-                } else {
-                    if(month != date.getMonthValue()){
-                        i = 0;
-                        month = date.getMonthValue();
-                    } else {
-                        i++;
-                    }
-                    renameFiles(f, date, errors, dateLog, i, commonIndex);
+                LocalDateTime date;
+                switch (option){
+                    case F:
+                        date = getLastModifiedDateTime(f, dateLog);
+                        createAndMoveToNewFolders(f, date, errors, dateLog, commonIndex);
+                        break;
+                    case RM:
+                        moveToRoot(f, errors, commonIndex);
+                        break;
+                    case RMR: case EMPTY:
+                        date = getLastModifiedDateTime(f, dateLog);
+                        if(month != date.getMonthValue() || year != date.getYear()){
+                            i = 0;
+                            month = date.getMonthValue();
+                            year = date.getYear();
+                        } else {
+                            i++;
+                        }
+                        moveToRootAndRename(f, date, errors, dateLog, i, commonIndex);
+                        break;
                 }
-
             }
         } else {
-            String errText = directory.getAbsolutePath() + " - this directory is empty";
+            String errText = root.getAbsolutePath() + " - this directory is empty";
             errors.add(errText);
         }
         System.out.printf("Process completed with %d errors.\n", errors.size());
@@ -86,21 +93,22 @@ public class MovingOrRenamingFiles {
             if (exif != null) {
                 date = convertMillisToLocalDateUTC(exif.getDate(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL).getTime());
                 logger.setLength(0);
-                logger.append(String.format("%s: %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour())));
+                logger.append(String.format("It has normal metadata (%s): %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour())));
             }
         } catch (Exception ignored) {}
-        if (date == null) {
-            date = convertMillisToLocalDate(f.lastModified());
+        LocalDateTime lastModifiedLocalDate = convertMillisToLocalDate(f.lastModified());
+        if (date == null || date.isAfter(LocalDateTime.now()) || date.isAfter(lastModifiedLocalDate)) {
+            date = lastModifiedLocalDate;
             logger.setLength(0);
-            logger.append(String.format("It doesn't have metadata (%s): %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour())));
+            logger.append(String.format("It doesn't have metadata or wrong metadata (%s), got from lastModified: %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour())));
         }
         return date;
     }
 
-    private void moveToDirectories(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i){
+    private void createAndMoveToNewFolders(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i){
         String dirName = null;
         try {
-            dirName = String.format("%s\\%s_%s", directory, date.getYear(), addZeros(date.getMonthValue()));
+            dirName = String.format("%s\\%s_%s", root, date.getYear(), addZeros(date.getMonthValue()));
             File dir = null;
             if (dirName != null) {
                 dir = new File(dirName);
@@ -114,34 +122,63 @@ public class MovingOrRenamingFiles {
             }
             if(dir != null) {
                 FileUtils.moveFileToDirectory(f, dir, false);
-                System.out.println(String.format("\t%d Success moved - %s", i, dateLog.toString()));
+                System.out.println(String.format("\t%d Success moved - from <%s> to <%s>", i, f.getName(), dir.getName()));
             } else {
                 throw new RuntimeException("Failed to create directory!");
             }
         } catch (Exception e) {
-            String errText = String.format("\tError by moving %s to: %s (%s)", f.getName(), dirName, e.getMessage());
+            String errText = String.format("\tError by moving <%s> to: <%s> (%s)", f.getName(), dirName, e.getMessage());
             System.out.println(errText);
             errors.add(errText);
         }
     }
 
-    private void renameFiles(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i, int commonIndex){
-        String newName = null;
+    private void moveToRoot(File f, List<String> errors, int commonIndex){
+        String movedName = null;
         try {
-            newName = String.format("%s\\%s_%s_%s.%s", directory, date.getYear(), addZeros(date.getMonthValue()), i, f.getName().substring(f.getName().lastIndexOf(".")+1));
-            File renamedFile = new File(newName);
-            while(renamedFile.exists()){
-                int newIndex = Integer.parseInt(renamedFile.getName().substring(renamedFile.getName().lastIndexOf("_")+1, renamedFile.getName().lastIndexOf("."))) + 1;
-                newName = String.format("%s\\%s_%s_%s.%s", directory, date.getYear(), addZeros(date.getMonthValue()), newIndex, f.getName().substring(f.getName().lastIndexOf(".")+1));
-                renamedFile = new File(newName);
+            movedName = String.format("%s\\%s", root, f.getName());
+            if (f.getAbsolutePath().equals(movedName)) {
+                return;
             }
-            FileUtils.moveFile(f, renamedFile);
-            System.out.println(String.format("\t%d Success renamed and moved - %s", commonIndex, dateLog.toString()));
+            File movedFile = new File(movedName);
+            int addIndex = 1;
+            while(movedFile.exists()){
+                movedName = String.format("%s\\%s_%s.%s", root, f.getName().substring(0, f.getName().lastIndexOf(".")), addIndex++, getExtension(f));
+                movedFile = new File(movedName);
+            }
+            FileUtils.moveFile(f, movedFile);
+            System.out.println(String.format("\t%d Success moved to root - %s", commonIndex, movedFile.getName()));
         } catch (Exception e) {
-            String errText = String.format("\tError by renaming %s to: %s (%s)", f.getName(), newName, e.getMessage());
+            String errText = String.format("\tError by moving <%s> to: <%s> (%s)", f.getName(), movedName, e.getMessage());
             System.out.println(errText);
             errors.add(errText);
         }
+    }
+
+    private void moveToRootAndRename(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i, int commonIndex){
+        String newName = null;
+        try {
+            newName = String.format("%s\\%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), i, getExtension(f));
+            if (f.getAbsolutePath().equals(newName)) {
+                return;
+            }
+            File renamedFile = new File(newName);
+            while(renamedFile.exists()){
+                int newIndex = Integer.parseInt(renamedFile.getName().substring(renamedFile.getName().lastIndexOf("_")+1, renamedFile.getName().lastIndexOf("."))) + 1;
+                newName = String.format("%s\\%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), newIndex, getExtension(f));
+                renamedFile = new File(newName);
+            }
+            FileUtils.moveFile(f, renamedFile);
+            System.out.println(String.format("\t%d Success renamed and moved - from <%s> to <%s>", commonIndex, f.getName(), renamedFile.getName()));
+        } catch (Exception e) {
+            String errText = String.format("\tError by renaming <%s> to: <%s> (%s)", f.getName(), newName, e.getMessage());
+            System.out.println(errText);
+            errors.add(errText);
+        }
+    }
+
+    private String getExtension(File f){
+        return f.getName().substring(f.getName().lastIndexOf(".")+1);
     }
 
 }
