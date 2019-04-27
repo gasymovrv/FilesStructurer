@@ -30,7 +30,7 @@ public class MovingOrRenamingFiles {
         if (iter.hasNext()) {
             File f;
             int commonIndex = 0;
-            int i = 0;
+            int fileNameIndex = 0;
             int month = -1;
             int year = -1;
             while (iter.hasNext()) {
@@ -49,13 +49,12 @@ public class MovingOrRenamingFiles {
                     case RMR: case EMPTY:
                         date = getLastModifiedDateTime(f, dateLog);
                         if(month != date.getMonthValue() || year != date.getYear()){
-                            i = 0;
+                            fileNameIndex = 0;
                             month = date.getMonthValue();
                             year = date.getYear();
-                        } else {
-                            i++;
                         }
-                        moveToRootAndRename(f, date, errors, dateLog, i, commonIndex);
+                        int countFiles = moveToRootAndRename(f, date, errors, dateLog, fileNameIndex, commonIndex);
+                        fileNameIndex += countFiles;
                         break;
                 }
             }
@@ -127,7 +126,7 @@ public class MovingOrRenamingFiles {
                 throw new RuntimeException("Failed to create directory!");
             }
         } catch (Exception e) {
-            String errText = String.format("\tError by moving <%s> to: <%s> (%s)", f.getName(), dirName, e.getMessage());
+            String errText = String.format("\tError by moving <%s> to: <%s> (%s)", f.getAbsolutePath(), dirName, e.getMessage());
             System.out.println(errText);
             errors.add(errText);
         }
@@ -142,38 +141,47 @@ public class MovingOrRenamingFiles {
             }
             File movedFile = new File(movedName);
             int addIndex = 1;
+            String infoIfChangedName = "";
             while(movedFile.exists()){
+                String oldMovedName = movedName;
                 movedName = String.format("%s\\%s_%s.%s", root, f.getName().substring(0, f.getName().lastIndexOf(".")), addIndex++, getExtension(f));
                 movedFile = new File(movedName);
+                if(!movedFile.exists()){
+                    infoIfChangedName="File with name <"+oldMovedName+"> already exists, name of moving file was changed";
+                }
             }
             FileUtils.moveFile(f, movedFile);
-            System.out.println(String.format("\t%d Success moved to root - %s", commonIndex, movedFile.getName()));
+            System.out.println(String.format("\t%d Success moved to root - <%s>; %s", commonIndex, movedFile.getName(), infoIfChangedName));
         } catch (Exception e) {
-            String errText = String.format("\tError by moving <%s> to: <%s> (%s)", f.getName(), movedName, e.getMessage());
+            String errText = String.format("\tError by moving <%s> to: <%s> (%s)", f.getAbsolutePath(), movedName, e.getMessage());
             System.out.println(errText);
             errors.add(errText);
         }
     }
 
-    private void moveToRootAndRename(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i, int commonIndex){
+    private int moveToRootAndRename(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i, int commonIndex){
         String newName = null;
         try {
             newName = String.format("%s\\%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), i, getExtension(f));
             if (f.getAbsolutePath().equals(newName)) {
-                return;
+                return 1;
             }
             File renamedFile = new File(newName);
+            int countFiles = 1;
             while(renamedFile.exists()){
                 int newIndex = Integer.parseInt(renamedFile.getName().substring(renamedFile.getName().lastIndexOf("_")+1, renamedFile.getName().lastIndexOf("."))) + 1;
                 newName = String.format("%s\\%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), newIndex, getExtension(f));
                 renamedFile = new File(newName);
+                countFiles++;
             }
             FileUtils.moveFile(f, renamedFile);
-            System.out.println(String.format("\t%d Success renamed and moved - from <%s> to <%s>", commonIndex, f.getName(), renamedFile.getName()));
+            System.out.println(String.format("\t%d Success renamed and moved to root - from <%s> to <%s>", commonIndex, f.getName(), renamedFile.getName()));
+            return countFiles;
         } catch (Exception e) {
-            String errText = String.format("\tError by renaming <%s> to: <%s> (%s)", f.getName(), newName, e.getMessage());
+            String errText = String.format("\tError by renaming or moving <%s> to: <%s> (%s)", f.getAbsolutePath(), newName, e.getMessage());
             System.out.println(errText);
             errors.add(errText);
+            return 0;
         }
     }
 
