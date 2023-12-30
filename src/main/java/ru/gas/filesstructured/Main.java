@@ -1,62 +1,85 @@
 package ru.gas.filesstructured;
 
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class Main {
+
     public static void main(String[] args) {
-        System.out.println("Программа структурирования файлов.");
+        System.out.println("Программа структурирования файлов\n");
         System.out.println(getArgsInfo());
         Options option = Options.EMPTY;
+        Set<String> exclusions = Set.of();
         System.out.println("----------------------------------------------------");
 
-        if(args.length == 0) {
+        if (args.length == 0) {
             printErrorInfo();
             return;
-        } else if(args.length > 1) {
-            String[] argsWithoutDirectory = Arrays.copyOfRange(args, 1, args.length);
+        } else if (args.length > 1) {
+            Iterator<String> argsWithoutDirectory = Arrays.stream(Arrays.copyOfRange(args, 1, args.length)).iterator();
             int count = 0;
-            for (String s : argsWithoutDirectory) {
-                if(s.equals("-f")){
+
+            while (argsWithoutDirectory.hasNext()) {
+                final var s = argsWithoutDirectory.next();
+
+                if (s.equals("-e") && argsWithoutDirectory.hasNext()) {
+                    exclusions = Arrays.stream(argsWithoutDirectory.next().split(","))
+                            .collect(Collectors.toSet());
+                    continue;
+                }
+                if (s.equals("-f")) {
                     option = Options.F;
                     count++;
                 }
-                if(s.equals("-rm")){
+                if (s.equals("-rm")) {
                     option = Options.RM;
                     count++;
                 }
-                if(s.equals("-rmr")){
+                if (s.equals("-rmr")) {
                     option = Options.RMR;
                     count++;
                 }
             }
-            if(count>1){
+            if (count > 1) {
                 printErrorInfo();
                 return;
             }
         }
-        MovingOrRenamingFiles movingOrRenamingFiles = new MovingOrRenamingFiles(args[0], option);
+        MovingOrRenamingFiles movingOrRenamingFiles = new MovingOrRenamingFiles(args[0], option, exclusions);
         System.out.println(option.getInfo());
         System.out.println("----------------------run---------------------------");
         movingOrRenamingFiles.run();
     }
 
-    private static void printErrorInfo(){
+    private static void printErrorInfo() {
         System.out.println("Неверные параметры запуска.");
         System.out.println(getArgsInfo());
     }
 
     private static String getArgsInfo() {
-        return  "Обязательные аргументы:\n" +
-                "\t1.[путь_к_корневой_директории]\n\n" +
-                "Необязательные аргументы (может быть выбран только один):\n" +
-                "\t1.[-rm] - рекурсивное извлечение файлов из всех подпапок\n" +
-                "\t2.[-rmr] - рекурсивное извлечение файлов из всех подпапок и переименование по шаблону: [год]_[№ месяца]_[№ файла]\n" +
-                "\t3.[-f] - распределяет файлы по подпапкам с именем [год]_[№ месяца]\n" +
-                "\t4. Без необязательных аргументов - переименовывает файлы в указанной директории по шаблону: [год]_[№ месяца]_[№ файла]\n\n"+
-                "Примечания:\n" +
-                "Год и номер месяца - берутся из даты съемки если это фото, иначе из даты изменения файла.\n\n" +
-                "Пример запуска:\n" +
-                "java -jar FilesStructured.jar \"C:\\Users\\Dma\\Desktop\\2017\" -f\n";
+        return """
+                Обязательные аргументы:
+                    1.[путь_к_корневой_директории]
+
+                Необязательные аргументы
+                                
+                    Тип запуска (может быть выбран только один):
+                        1.[-rm] - рекурсивное извлечение файлов из всех подпапок
+                        2.[-rmr] - рекурсивное извлечение файлов из всех подпапок и переименование по шаблону: [год]_[№ месяца]_[№ файла]
+                        3.[-f] - распределяет файлы по подпапкам с именем [год]_[№ месяца]
+                        4. Без необязательных аргументов - переименовывает файлы в указанной директории по шаблону: [год]_[№ месяца]_[№ файла]
+
+                    Исключения - необязательный аргумент, но если указан, то должен идти последним:
+                        5. [-e <список имен файлов через запятую для исключения работы с ними>]
+                               
+                Примечания:
+                Год и номер месяца - берутся из даты съемки если это фото, иначе из даты изменения файла.
+
+                Пример запуска:
+                java -jar FilesStructured.jar "C:\\Users\\Dma\\Desktop\\2017" -f
+                """;
     }
 
 }
