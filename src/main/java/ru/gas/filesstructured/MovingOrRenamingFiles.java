@@ -41,7 +41,7 @@ public class MovingOrRenamingFiles {
     }
 
     public void run() {
-        Iterator<File> iter = FileUtils.iterateFiles(root, null, option == Options.RM || option == Options.RMR);
+        Iterator<File> iter = FileUtils.iterateFiles(root, null, option == Options.RM || option == Options.RMR || option == Options.RMF);
         List<String> errors = new ArrayList<>();
 
         if (iter.hasNext()) {
@@ -68,6 +68,10 @@ public class MovingOrRenamingFiles {
                         createAndMoveToNewFolders(f, date, errors, dateLog, commonIndex);
                         break;
                     case RM:
+                        moveToRoot(f, errors, commonIndex);
+                        break;
+                    case RMF:
+                        getAndFillDateTaken(f, dateLog);
                         moveToRoot(f, errors, commonIndex);
                         break;
                     case RMR:
@@ -125,7 +129,7 @@ public class MovingOrRenamingFiles {
         }
 
         // If dateTaken is null or invalid, use the modified date and update the metadata
-        if (dateTaken == null || dateTaken.isAfter(LocalDateTime.now())) {
+        if (dateTaken == null || dateTaken.isAfter(LocalDateTime.now()) || dateTaken.isBefore(LocalDateTime.of(1900, 1, 1, 0, 0))) {
             dateTaken = convertMillisToLocalDate(f.lastModified());
             try {
                 // Only try to update metadata for JPEG files
