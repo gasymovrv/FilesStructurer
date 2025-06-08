@@ -3,7 +3,11 @@ package ru.gas.filesstructured;
 import com.drew.imaging.ImageMetadataReader;
 import com.drew.metadata.Metadata;
 import com.drew.metadata.exif.ExifSubIFDDirectory;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -12,6 +16,11 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import org.apache.commons.imaging.ImageReadException;
+import org.apache.commons.imaging.ImageWriteException;
+import org.apache.commons.imaging.formats.jpeg.exif.ExifRewriter;
+import org.apache.commons.imaging.formats.tiff.constants.ExifTagConstants;
+import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet;
 import org.apache.commons.io.FileUtils;
 
 public class MovingOrRenamingFiles {
@@ -55,7 +64,7 @@ public class MovingOrRenamingFiles {
 
                 switch (option) {
                     case F:
-                        date = getLastModifiedDateTime(f, dateLog);
+                        date = getAndFillDateTaken(f, dateLog);
                         createAndMoveToNewFolders(f, date, errors, dateLog, commonIndex);
                         break;
                     case RM:
@@ -63,7 +72,7 @@ public class MovingOrRenamingFiles {
                         break;
                     case RMR:
                     case EMPTY:
-                        date = getLastModifiedDateTime(f, dateLog);
+                        date = getAndFillDateTaken(f, dateLog);
                         if (month != date.getMonthValue() || year != date.getYear()) {
                             fileNameIndex = 0;
                             month = date.getMonthValue();
@@ -100,25 +109,48 @@ public class MovingOrRenamingFiles {
         }
     }
 
-    private LocalDateTime getLastModifiedDateTime(File f, StringBuilder logger) {
-        LocalDateTime date = null;
+    private LocalDateTime getAndFillDateTaken(File f, StringBuilder logger) {
+        // Get the original date taken from metadata if available
+        LocalDateTime dateTaken = null;
         try {
             Metadata metadata = ImageMetadataReader.readMetadata(f);
             ExifSubIFDDirectory exif = metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class);
             if (exif != null) {
-                date = convertMillisToLocalDateUTC(exif.getDate(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL).getTime());
+                dateTaken = convertMillisToLocalDateUTC(exif.getDate(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL).getTime());
                 logger.setLength(0);
-                logger.append(String.format("It has normal metadata (%s): %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour())));
+                logger.append(String.format("It has normal metadata (%s): %s_%s_%s_%sh", f.getName(), dateTaken.getYear(), addZeros(dateTaken.getMonthValue()), addZeros(dateTaken.getDayOfMonth()), addZeros(dateTaken.getHour())));
             }
         } catch (Exception ignored) {
+            // If metadata reading fails, we'll use the last modified date
         }
-        LocalDateTime lastModifiedLocalDate = convertMillisToLocalDate(f.lastModified());
-        if (date == null || date.isAfter(LocalDateTime.now()) || date.isAfter(lastModifiedLocalDate)) {
-            date = lastModifiedLocalDate;
-            logger.setLength(0);
-            logger.append(String.format("It doesn't have metadata or wrong metadata (%s), got from lastModified: %s_%s_%s_%sh", f.getName(), date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), addZeros(date.getHour())));
+
+        // If dateTaken is null or invalid, use the modified date and update the metadata
+        if (dateTaken == null || dateTaken.isAfter(LocalDateTime.now())) {
+            dateTaken = convertMillisToLocalDate(f.lastModified());
+            try {
+                // Only try to update metadata for JPEG files
+                if (f.getName().toLowerCase().endsWith(".jpg") || f.getName().toLowerCase().endsWith(".jpeg")) {
+                    var outputSet = new TiffOutputSet();
+
+                    // Set the DateTimeOriginal tag
+                    outputSet.getOrCreateExifDirectory().add(ExifTagConstants.EXIF_TAG_DATE_TIME_ORIGINAL,
+                            dateTaken.format(java.time.format.DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")));
+
+                    // Write the metadata back to the file
+                    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                    new ExifRewriter().updateExifMetadataLossless(f, outputStream, outputSet);
+
+                    // Write the modified file back
+                    try (OutputStream os = new FileOutputStream(f)) {
+                        outputStream.writeTo(os);
+                    }
+                }
+            } catch (ImageReadException | ImageWriteException | IOException e) {
+                // Log error but continue with the file operation
+                System.out.println("Warning: Could not update EXIF metadata for " + f.getName());
+            }
         }
-        return date;
+        return dateTaken;
     }
 
     private void createAndMoveToNewFolders(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i) {
@@ -179,7 +211,7 @@ public class MovingOrRenamingFiles {
     private int moveToRootAndRename(File f, LocalDateTime date, List<String> errors, StringBuilder dateLog, int i, int commonIndex) {
         String newName = null;
         try {
-            newName = String.format("%s\\%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), i, getExtension(f));
+            newName = String.format("%s\\%s_%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), i, getExtension(f));
             if (f.getAbsolutePath().equals(newName)) {
                 return 1;
             }
@@ -187,7 +219,7 @@ public class MovingOrRenamingFiles {
             int countFiles = 1;
             while (renamedFile.exists()) {
                 int newIndex = Integer.parseInt(renamedFile.getName().substring(renamedFile.getName().lastIndexOf("_") + 1, renamedFile.getName().lastIndexOf("."))) + 1;
-                newName = String.format("%s\\%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), newIndex, getExtension(f));
+                newName = String.format("%s\\%s_%s_%s_%s.%s", root, date.getYear(), addZeros(date.getMonthValue()), addZeros(date.getDayOfMonth()), newIndex, getExtension(f));
                 renamedFile = new File(newName);
                 countFiles++;
             }
